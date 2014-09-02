@@ -36,7 +36,7 @@ CTxMemPool mempool;
 unsigned int nTransactionsUpdated = 0;
 
 map<uint256, CBlockIndex*> mapBlockIndex;
-uint256 hashGenesisBlock("0000041f9db2c98d76059f93348e114aced9e7f5f3eea357fcb2d92494c30362"); //mainnet
+uint256 hashGenesisBlock("0x00000b17907ba5a23bc59b74e1b963931ff16cb11a3d36da913b25f9562e4cb5"); //mainnet
 
 static CBigNum bnProofOfWorkLimit(~uint256(0) >> 20); // MinersCoin: starting difficulty is 1 / 2^12
 CBlockIndex* pindexGenesisBlock = NULL;
@@ -1324,13 +1324,13 @@ uint256 static GetOrphanRoot(const CBlockHeader* pblock)
 int64 static GetBlockValue(int nBits, int nHeight, int64 nFees)
 {
     int64 nSubsidy = 50 * COIN;
-    if (nHeight == 3) nSubsidy = 1111111 * COIN;
-    for(int i = 172800; i <= nHeight; i += 172800) nSubsidy *= 0.90;
+    if (nHeight == 2) nSubsidy = 2222222 * COIN;
+    for(int i = 691200; i <= nHeight; i += 691200) nSubsidy *= 0.90;
 
     return nSubsidy + nFees;
 }
 
-static const int64 nTargetTimespan = 3 * 60; // MinersCoin: 3 minutes
+static const int64 nTargetTimespan = 5 * 60 * 60; // MinersCoin: 5 hours
 static const int64 nTargetSpacing = 3 * 60; // MinersCoin: 3 minutes
 static const int64 nInterval = nTargetTimespan / nTargetSpacing; // 576
 
@@ -1359,7 +1359,7 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
     return bnResult.GetCompact();
 }
 
-unsigned int static GetNextWorkRequired_V1(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
+unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
 {
     unsigned int nProofOfWorkLimit = bnProofOfWorkLimit.GetCompact();
 
@@ -1428,228 +1428,6 @@ unsigned int static GetNextWorkRequired_V1(const CBlockIndex* pindexLast, const 
     return bnNew.GetCompact();
 }
 
-unsigned int static KimotoGravityWell(const CBlockIndex* pindexLast, const CBlockHeader *pblock, uint64 TargetBlocksSpacingSeconds, uint64 PastBlocksMin, uint64 PastBlocksMax) {
-        const CBlockIndex *BlockLastSolved = pindexLast;
-        const CBlockIndex *BlockReading = pindexLast;
-        const CBlockHeader *BlockCreating = pblock;
-        BlockCreating = BlockCreating;
-        uint64 PastBlocksMass = 0;
-        int64 PastRateActualSeconds = 0;
-        int64 PastRateTargetSeconds = 0;
-        double PastRateAdjustmentRatio = double(1);
-        CBigNum PastDifficultyAverage;
-        CBigNum PastDifficultyAveragePrev;
-        double EventHorizonDeviation;
-        double EventHorizonDeviationFast;
-        double EventHorizonDeviationSlow;
-        
-    if (BlockLastSolved == NULL || BlockLastSolved->nHeight == 0 || (uint64)BlockLastSolved->nHeight < PastBlocksMin) { return bnProofOfWorkLimit.GetCompact(); }
-        
-        for (unsigned int i = 1; BlockReading && BlockReading->nHeight > 0; i++) {
-                if (PastBlocksMax > 0 && i > PastBlocksMax) { break; }
-                PastBlocksMass++;
-                
-                if (i == 1) { PastDifficultyAverage.SetCompact(BlockReading->nBits); }
-                else { PastDifficultyAverage = ((CBigNum().SetCompact(BlockReading->nBits) - PastDifficultyAveragePrev) / i) + PastDifficultyAveragePrev; }
-                PastDifficultyAveragePrev = PastDifficultyAverage;
-                
-                PastRateActualSeconds = BlockLastSolved->GetBlockTime() - BlockReading->GetBlockTime();
-                PastRateTargetSeconds = TargetBlocksSpacingSeconds * PastBlocksMass;
-                PastRateAdjustmentRatio = double(1);
-                if (PastRateActualSeconds < 0) { PastRateActualSeconds = 0; }
-                if (PastRateActualSeconds != 0 && PastRateTargetSeconds != 0) {
-                PastRateAdjustmentRatio = double(PastRateTargetSeconds) / double(PastRateActualSeconds);
-                }
-                EventHorizonDeviation = 1 + (0.7084 * pow((double(PastBlocksMass)/double(28.2)), -1.228));
-                EventHorizonDeviationFast = EventHorizonDeviation;
-                EventHorizonDeviationSlow = 1 / EventHorizonDeviation;
-                
-                if (PastBlocksMass >= PastBlocksMin) {
-                        if ((PastRateAdjustmentRatio <= EventHorizonDeviationSlow) || (PastRateAdjustmentRatio >= EventHorizonDeviationFast)) { assert(BlockReading); break; }
-                }
-                if (BlockReading->pprev == NULL) { assert(BlockReading); break; }
-                BlockReading = BlockReading->pprev;
-        }
-        
-        CBigNum bnNew(PastDifficultyAverage);
-        if (PastRateActualSeconds != 0 && PastRateTargetSeconds != 0) {
-                bnNew *= PastRateActualSeconds;
-                bnNew /= PastRateTargetSeconds;
-        }
-
-    if (bnNew > bnProofOfWorkLimit) {
-        bnNew = bnProofOfWorkLimit; 
-    }
-        
-    return bnNew.GetCompact();
-}
-
-unsigned int static DarkGravityWave(const CBlockIndex* pindexLast, const CBlockHeader *pblock) {
-    /* current difficulty formula, minerscoin - DarkGravity v2, written by Evan Duffield - evan@minerscoin.io */
-    const CBlockIndex *BlockLastSolved = pindexLast;
-    const CBlockIndex *BlockReading = pindexLast;
-    const CBlockHeader *BlockCreating = pblock;
-    BlockCreating = BlockCreating;
-    int64 nBlockTimeAverage = 0;
-    int64 nBlockTimeAveragePrev = 0;
-    int64 nBlockTimeCount = 0;
-    int64 nBlockTimeSum2 = 0;
-    int64 nBlockTimeCount2 = 0;
-    int64 LastBlockTime = 0;
-    int64 PastBlocksMin = 14;
-    int64 PastBlocksMax = 140;
-    int64 CountBlocks = 0;
-    CBigNum PastDifficultyAverage;
-    CBigNum PastDifficultyAveragePrev;
-
-    if (BlockLastSolved == NULL || BlockLastSolved->nHeight == 0 || BlockLastSolved->nHeight < PastBlocksMin) { return bnProofOfWorkLimit.GetCompact(); }
-        
-    for (unsigned int i = 1; BlockReading && BlockReading->nHeight > 0; i++) {
-        if (PastBlocksMax > 0 && i > PastBlocksMax) { break; }
-        CountBlocks++;
-
-        if(CountBlocks <= PastBlocksMin) {
-            if (CountBlocks == 1) { PastDifficultyAverage.SetCompact(BlockReading->nBits); }
-            else { PastDifficultyAverage = ((CBigNum().SetCompact(BlockReading->nBits) - PastDifficultyAveragePrev) / CountBlocks) + PastDifficultyAveragePrev; }
-            PastDifficultyAveragePrev = PastDifficultyAverage;
-        }
-
-        if(LastBlockTime > 0){
-            int64 Diff = (LastBlockTime - BlockReading->GetBlockTime());
-            if(nBlockTimeCount <= PastBlocksMin) {
-                nBlockTimeCount++;
-
-                if (nBlockTimeCount == 1) { nBlockTimeAverage = Diff; }
-                else { nBlockTimeAverage = ((Diff - nBlockTimeAveragePrev) / nBlockTimeCount) + nBlockTimeAveragePrev; }
-                nBlockTimeAveragePrev = nBlockTimeAverage;
-            }
-            nBlockTimeCount2++;
-            nBlockTimeSum2 += Diff;
-        }
-        LastBlockTime = BlockReading->GetBlockTime();      
-
-        if (BlockReading->pprev == NULL) { assert(BlockReading); break; }
-        BlockReading = BlockReading->pprev;
-    }
-    
-    CBigNum bnNew(PastDifficultyAverage);
-    if (nBlockTimeCount != 0 && nBlockTimeCount2 != 0) {
-            double SmartAverage = ((((long double)nBlockTimeAverage)*0.7)+(((long double)nBlockTimeSum2 / (long double)nBlockTimeCount2)*0.3));
-            if(SmartAverage < 1) SmartAverage = 1;
-            double Shift = nTargetSpacing/SmartAverage;
-
-            double fActualTimespan = ((long double)CountBlocks*(double)nTargetSpacing)/Shift;
-            double fTargetTimespan = ((long double)CountBlocks*(double)nTargetSpacing);
-
-            if (fActualTimespan < fTargetTimespan/3)
-                fActualTimespan = fTargetTimespan/3;
-            if (fActualTimespan > fTargetTimespan*3)
-                fActualTimespan = fTargetTimespan*3;
-
-            int64 nActualTimespan = fActualTimespan;
-            int64 nTargetTimespan = fTargetTimespan;
-
-            // Retarget
-            bnNew *= nActualTimespan;
-            bnNew /= nTargetTimespan;
-    }
-
-    if (bnNew > bnProofOfWorkLimit){
-        bnNew = bnProofOfWorkLimit;
-    }
-     
-    return bnNew.GetCompact();
-}
-
-unsigned int static DarkGravityWave3(const CBlockIndex* pindexLast, const CBlockHeader *pblock) {
-    /* current difficulty formula, minerscoin - DarkGravity v3, written by Evan Duffield - evan@minerscoin.io */
-    const CBlockIndex *BlockLastSolved = pindexLast;
-    const CBlockIndex *BlockReading = pindexLast;
-    const CBlockHeader *BlockCreating = pblock;
-    BlockCreating = BlockCreating;
-    int64 nActualTimespan = 0;
-    int64 LastBlockTime = 0;
-    int64 PastBlocksMin = 24;
-    int64 PastBlocksMax = 24;
-    int64 CountBlocks = 0;
-    CBigNum PastDifficultyAverage;
-    CBigNum PastDifficultyAveragePrev;
-
-    if (BlockLastSolved == NULL || BlockLastSolved->nHeight == 0 || BlockLastSolved->nHeight < PastBlocksMin) { 
-        return bnProofOfWorkLimit.GetCompact(); 
-    }
-        
-    for (unsigned int i = 1; BlockReading && BlockReading->nHeight > 0; i++) {
-        if (PastBlocksMax > 0 && i > PastBlocksMax) { break; }
-        CountBlocks++;
-
-        if(CountBlocks <= PastBlocksMin) {
-            if (CountBlocks == 1) { PastDifficultyAverage.SetCompact(BlockReading->nBits); }
-            else { PastDifficultyAverage = ((PastDifficultyAveragePrev * CountBlocks)+(CBigNum().SetCompact(BlockReading->nBits))) / (CountBlocks+1); }
-            PastDifficultyAveragePrev = PastDifficultyAverage;
-        }
-
-        if(LastBlockTime > 0){
-            int64 Diff = (LastBlockTime - BlockReading->GetBlockTime());
-            nActualTimespan += Diff;
-        }
-        LastBlockTime = BlockReading->GetBlockTime();      
-
-        if (BlockReading->pprev == NULL) { assert(BlockReading); break; }
-        BlockReading = BlockReading->pprev;
-    }
-    
-    CBigNum bnNew(PastDifficultyAverage);
-
-    int64 nTargetTimespan = CountBlocks*nTargetSpacing;
-
-    if (nActualTimespan < nTargetTimespan/3)
-        nActualTimespan = nTargetTimespan/3;
-    if (nActualTimespan > nTargetTimespan*3)
-        nActualTimespan = nTargetTimespan*3;
-
-    // Retarget
-    bnNew *= nActualTimespan;
-    bnNew /= nTargetTimespan;
-
-    if (bnNew > bnProofOfWorkLimit){
-        bnNew = bnProofOfWorkLimit;
-    }
-     
-    return bnNew.GetCompact();
-}
-
-unsigned int static GetNextWorkRequired_V2(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
-{
-        static const int64 BlocksTargetSpacing = 2.5 * 60; // 2.5 minutes
-        static const unsigned int TimeDaySeconds = 60 * 60 * 24;
-        int64 PastSecondsMin = TimeDaySeconds * 0.025;
-        int64 PastSecondsMax = TimeDaySeconds * 7;
-        uint64 PastBlocksMin = PastSecondsMin / BlocksTargetSpacing;
-        uint64 PastBlocksMax = PastSecondsMax / BlocksTargetSpacing;
-        
-        return KimotoGravityWell(pindexLast, pblock, BlocksTargetSpacing, PastBlocksMin, PastBlocksMax);
-}
-
-unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
-{
-        int DiffMode = 1;
-        if (fTestNet) {
-            if (pindexLast->nHeight+1 >= 16) { DiffMode = 4; }
-        }
-        else {
-            if (pindexLast->nHeight+1 >= 68589) { DiffMode = 4; }
-            else if (pindexLast->nHeight+1 >= 34140) { DiffMode = 3; }
-            else if (pindexLast->nHeight+1 >= 15200) { DiffMode = 2; }
-        }
-
-        if (DiffMode == 1) { return GetNextWorkRequired_V1(pindexLast, pblock); }
-        else if (DiffMode == 2) { return GetNextWorkRequired_V2(pindexLast, pblock); }
-        else if (DiffMode == 3) { return DarkGravityWave(pindexLast, pblock); }
-        else if (DiffMode == 4) { return DarkGravityWave3(pindexLast, pblock); }
-        return DarkGravityWave3(pindexLast, pblock);
-}
-
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits)
 {
@@ -1666,7 +1444,6 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits)
 
     return true;
 }
-
 // Return maximum amount of blocks that other nodes claim to have
 int GetNumBlocksOfPeers()
 {
@@ -3397,7 +3174,7 @@ bool LoadBlockIndex()
 {
     if (fTestNet)
     {
-        hashGenesisBlock = uint256("0x000007aeaaa96758b125b14e5068d354c26b4eb898efc63fc4de009f2f33b7eb");
+        hashGenesisBlock = uint256("0x000006017e110fae8fc910b97eb98791aa5901f4846d074bcc8b0a290032f891");
     }
 
     //
@@ -3427,13 +3204,13 @@ bool InitBlockIndex() {
     // Only add the genesis block if not reindexing (in which case we reuse the one already on disk)
     if (!fReindex) {
         // Genesis Block:
-       // CBlock(hash=0000041f9db2c98d76059f93348e114aced, PoW=0000041f9db2c98d76059f9334, ver=1, hashPrevBlock=00000000000000000000, hashMerkleRoot=ed89cc1af60251975408c405433ed8caa7eea88a9e814b13e5bcd26022c11075, nTime=1407349900, nBits=1e0ffff0, nNonce=1138943, vtx=1)
-  // CTransaction(hash=ed89cc1af60251975408c405433ed8caa7eea88a9e814b13e5bcd26022c11075, ver=1, vin.size=1, vout.size=1, nLockTime=0)
-   // CTxIn(COutPoint(0000000000000000000000000000000000000000000000000000000000000000, 4294967295), coinbase 04ffff001d01044c61285769726564204e6577733a2030392f4a616e2f323031342920546865204772616e64204578706572696d656e7420476f6573204c6976653a204f)
-   // CTxOut(nValue=50.00000000, scriptPubKey=040184710fa689ad5023690c80f3a4)
- // vMerkleTree: ed89cc1af60251975408c405433ed8ca
+        // CBlock(hash=00000b17907ba5a23bc59b74e1b963931ff16cb11a3d36da913b25f9562e4cb5, PoW=00000b17907ba5a23bc59b74e1b963931ff16cb11a3d36da913b25f9562e4cb5, ver=1, hashPrevBlock=0000000000000000000000000000000, hashMerkleRoot=780f18d18c68e3717d5c9bc2eddcc64a345a649a9cf838c26d77f2265326dcab, nTime=1408881137, nBits=1e0ffff0, nNonce=516391, vtx=1)
+        // CTransaction(hash=780f18d18c68e3717d5c9bc2eddcc64a345a649a9cf838c26d77f2265326dcab, ver=1, vin.size=1, vout.size=1, nLockTime=0)
+        // CTxIn(COutPoint(0000000000000000000000000000000000000000000000000000000000000000, 4294967295), coinbase 04ffff001d01044c5e285769726564204e6577733a2030392f4a616e2f32303134293b20546865204772616e64204578706572696d656e7420476f6573204c6976653a204f76657273746f636b20)
+        // CTxOut(nValue=50.00000000, scriptPubKey=040184710fa689ad5023690c80f3a4)
+        // vMerkleTree: 780f18d18c68e3717d5c9bc2eddcc64a345a649a9cf838c26d77f2265326dcab
         // Genesis block        
-        const char* pszTimestamp = "(Wired News: 09/Jan/2014) The Grand Experiment Goes Live: Overstock.com Is Now Accepting Bitcoins";
+        const char* pszTimestamp = "(Wired News: 09/Jan/2014); The Grand Experiment Goes Live: Overstock Is Now Accepting Bitcoins";
         CTransaction txNew;
         txNew.vin.resize(1);
         txNew.vout.resize(1);
@@ -3445,14 +3222,14 @@ bool InitBlockIndex() {
         block.hashPrevBlock = 0;
         block.hashMerkleRoot = block.BuildMerkleTree();
         block.nVersion = 1;
-        block.nTime    = 1407349900;
+        block.nTime    = 1408881137;
         block.nBits    = 0x1e0ffff0;
-        block.nNonce   = 1138943;
+        block.nNonce   = 516391;
 
         if (fTestNet)
         {
-            block.nTime    = 1407345110;
-            block.nNonce   = 3125472;
+            block.nTime    = 1408879906;
+            block.nNonce   = 2444047;
         }
 
         //// debug print
@@ -3460,8 +3237,8 @@ bool InitBlockIndex() {
         printf("%s\n", hash.ToString().c_str());
         printf("%s\n", hashGenesisBlock.ToString().c_str());
         printf("%s\n", block.hashMerkleRoot.ToString().c_str());
-        assert(block.hashMerkleRoot == uint256("0xed89cc1af60251975408c405433ed8caa7eea88a9e814b13e5bcd26022c11075"));
-        
+        assert(block.hashMerkleRoot == uint256("0x780f18d18c68e3717d5c9bc2eddcc64a345a649a9cf838c26d77f2265326dcab"));
+ 
         block.print();
         assert(hash == hashGenesisBlock);
 
